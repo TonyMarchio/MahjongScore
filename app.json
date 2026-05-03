@@ -2,14 +2,38 @@
   "expo": {
     "name": "MahjongScore",
     "slug": "MahjongScore",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mahjongscore",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.anthonymarchio.mahjongscore",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Used to scan and identify mahjong tiles for scoring",
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Mahjong Tile Set",
+            "CFBundleTypeRole": "Editor",
+            "LSHandlerRank": "Owner",
+            "LSItemContentTypes": ["com.anthonymarchio.mahjongscore.tileset"]
+          }
+        ],
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeConformsTo": ["public.data", "public.content"],
+            "UTTypeDescription": "Mahjong Tile Set",
+            "UTTypeIdentifier": "com.anthonymarchio.mahjongscore.tileset",
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["mahjongset"],
+              "public.mime-type": "application/x-mahjongset"
+            }
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -27,6 +51,12 @@
     },
     "plugins": [
       "expo-router",
+      "expo-camera",
+      ["expo-build-properties", {
+        "ios": {
+          "deploymentTarget": "16.0"
+        }
+      }],
       [
         "expo-splash-screen",
         {
@@ -43,6 +73,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "de56144f-3560-49c0-bc65-a1239b4db7cb"
+      }
     }
   }
 }

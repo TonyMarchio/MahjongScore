@@ -1,0 +1,6 @@
+{
+  "name": "tile-vision",
+  "version": "1.0.0",
+  "description": "Apple Vision image fingerprinting for tile matching",
+  "main": "index.js"
+}
