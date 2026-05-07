@@ -1,50 +1,43 @@
-# Welcome to your Expo app 👋
+# MahjongScore
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A Taiwanese mahjong scoring app for iOS. Tracks hands, calculates payments, and keeps running totals across sessions — no more mental math or arguments about who owes what.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Score Hand** — pick the winner, draw method, and patterns; payments are calculated automatically using Taiwanese rules
+- **Scores** — live table layout showing all four players, hand log, undo last hand
+- **Session History & All-Time** — saves completed games and tracks cumulative standings; lowest total buys the next meal
+- **Camera Scorer (Beta)** — point the camera at your 16 tiles; OCR detects flowers and honors, fingerprint matching identifies suit tiles
+- **Tile Sets** — photograph reference tiles from your own set for better camera recognition; share sets with other players via AirDrop
 
-   ```bash
-   npm install
-   ```
+## Scoring Rules
 
-2. Start the app
+Implements Stephen's Taiwanese mahjong tai system:
 
-   ```bash
-   npx expo start
-   ```
+- Self draw → all 3 opponents pay
+- Discard win → only the discarder pays
+- Dealer bonus (+1 tai) applied automatically; dealer retains deal on a win
+- Supports countable patterns (exposed/concealed kongs), limit hands (小胡, 八朵花, 清一色, etc.), and flower/honor bonuses
 
-In the output, you'll find options to open the app in a
+## Getting Started
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Requires a custom dev client (the camera and tile-vision modules are not compatible with Expo Go).
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Build the dev client for your device:
 
-## Learn more
+```bash
+npx expo run:ios
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Stack
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Expo](https://expo.dev) / React Native (iOS)
+- [expo-camera](https://docs.expo.dev/versions/latest/sdk/camera/) for tile capture
+- [@react-native-ml-kit/text-recognition](https://github.com/a7ul/react-native-mlkit) for OCR
+- Custom `tile-vision` native module (Vision framework fingerprinting via `VNGenerateImageFeaturePrintRequest`)
+- AsyncStorage for local persistence
