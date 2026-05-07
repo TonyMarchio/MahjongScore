@@ -1,19 +1,27 @@
 import { requireNativeModule } from 'expo-modules-core';
 
-const TileVision = requireNativeModule('TileVision');
-
-/**
- * Compute a perceptual fingerprint for the image at the given file URI.
- * Returns a base64 blob. Store this alongside the tile set reference images.
- */
-export async function generateFingerprint(imageUri: string): Promise<string> {
-  return TileVision.generateFingerprint(imageUri);
+// Load lazily so a missing native module (old dev build) doesn't crash the app.
+// Fingerprinting will be unavailable until the dev client is rebuilt with tile-vision.
+let _mod: ReturnType<typeof requireNativeModule> | null = null;
+function mod() {
+  if (!_mod) {
+    try { _mod = requireNativeModule('TileVision'); } catch { /* not in this build */ }
+  }
+  return _mod;
 }
 
-/**
- * Compute the distance between two fingerprint blobs.
- * Lower distance = more visually similar. Typical range: 0–2.
- */
+export function isTileVisionAvailable(): boolean {
+  return mod() !== null;
+}
+
+export async function generateFingerprint(imageUri: string): Promise<string> {
+  const m = mod();
+  if (!m) throw new Error('TileVision not available — rebuild the dev client');
+  return m.generateFingerprint(imageUri);
+}
+
 export async function computeDistance(fp1: string, fp2: string): Promise<number> {
-  return TileVision.computeDistance(fp1, fp2);
+  const m = mod();
+  if (!m) throw new Error('TileVision not available — rebuild the dev client');
+  return m.computeDistance(fp1, fp2);
 }

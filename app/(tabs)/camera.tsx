@@ -14,6 +14,7 @@ import {
   TileSet, TileCategory, TILE_CATEGORIES,
   loadTileSets, cropTileRegion, classifyTile, guideRectToPhotoCrop,
 } from '@/utils/tileSets';
+import { isTileVisionAvailable } from 'tile-vision';
 import { analyzeTiles, TileRecognitionResult } from '@/utils/tileRecognition';
 import { PATTERNS } from '@/utils/scoring';
 
@@ -54,7 +55,10 @@ export default function CameraScreen() {
   const [tileResults, setTileResults] = useState<TileRegionResult[]>([]);
   const [ocrResult, setOcrResult] = useState<TileRecognitionResult | null>(null);
 
+  const [isFocused, setIsFocused] = useState(false);
+
   useFocusEffect(useCallback(() => {
+    setIsFocused(true);
     loadTileSets().then(loaded => {
       setSets(loaded);
       // Auto-select the first complete set if none selected
@@ -63,10 +67,13 @@ export default function CameraScreen() {
         return loaded.find(s => Object.keys(s.fingerprints ?? {}).length >= 3)?.id ?? null;
       });
     });
+    return () => setIsFocused(false); // release camera hardware on tab blur
   }, []));
 
   const activeSet = sets.find(s => s.id === activeSetsId) ?? null;
-  const hasFingerprints = activeSet && Object.keys(activeSet.fingerprints ?? {}).length >= 3;
+  const hasFingerprints = isTileVisionAvailable()
+    && activeSet != null
+    && Object.keys(activeSet.fingerprints ?? {}).length >= 3;
 
   function handleViewLayout(e: LayoutChangeEvent) {
     const { width, height } = e.nativeEvent.layout;
@@ -311,9 +318,9 @@ export default function CameraScreen() {
 
   return (
     <View style={S.root} onLayout={handleViewLayout}>
-      <CameraView ref={cameraRef} style={S.camera} facing="back">
+      {isFocused && <CameraView ref={cameraRef} style={S.camera} facing="back">
 
-        {/* Top bar */}
+        {/* Top bar — always rendered, child count of CameraView must stay fixed */}
         <View style={[S.topBar, { paddingTop: insets.top + 8 }]}>
           <Text style={S.topBarTitle}>Camera Score</Text>
           <View style={S.topBarRight}>
@@ -330,48 +337,10 @@ export default function CameraScreen() {
           </View>
         </View>
 
-        {/* Set picker dropdown */}
-        {showSetPicker && (
-          <View style={S.setPickerDropdown}>
-            {sets.length === 0 ? (
-              <TouchableOpacity
-                style={S.setPickerItem}
-                onPress={() => { setShowSetPicker(false); router.push('/manage-sets'); }}
-              >
-                <Text style={S.setPickerItemTxt}>Create a tile set first →</Text>
-              </TouchableOpacity>
-            ) : (
-              sets.map(s => {
-                const fpCount = Object.keys(s.fingerprints ?? {}).length;
-                return (
-                  <TouchableOpacity
-                    key={s.id}
-                    style={[S.setPickerItem, s.id === activeSetsId && S.setPickerItemActive]}
-                    onPress={() => { setActiveSetId(s.id); setShowSetPicker(false); }}
-                  >
-                    <Text style={[S.setPickerItemTxt, s.id === activeSetsId && S.setPickerItemActiveTxt]}>
-                      {s.name}
-                    </Text>
-                    <Text style={S.setPickerItemMeta}>
-                      {fpCount >= 3 ? `${fpCount} refs` : 'incomplete'}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-            <TouchableOpacity
-              style={[S.setPickerItem, { borderTopWidth: 1, borderTopColor: '#f0f0f0' }]}
-              onPress={() => { setShowSetPicker(false); router.push('/manage-sets'); }}
-            >
-              <Text style={[S.setPickerItemTxt, { color: '#8B0000' }]}>Manage tile sets…</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Framing guide — 1×16 grid */}
+        {/* Framing guide — always rendered (empty view when viewDim not ready) */}
         <GridGuide viewDim={viewDim} hasFingerprints={!!hasFingerprints} />
 
-        {/* Bottom capture button */}
+        {/* Bottom capture button — always rendered */}
         <View style={[S.bottomBar, { paddingBottom: insets.bottom + 24 }]}>
           {!hasFingerprints && (
             <Text style={S.noSetWarning}>
@@ -383,7 +352,46 @@ export default function CameraScreen() {
           </TouchableOpacity>
         </View>
 
-      </CameraView>
+      </CameraView>}
+
+      {/* Dropdown rendered OUTSIDE CameraView — conditional children inside a
+          native camera view cause Fabric index-mismatch crashes on New Arch */}
+      {isFocused && showSetPicker && (
+        <View style={[S.setPickerDropdown, { top: insets.top + 60 }]}>
+          {sets.length === 0 ? (
+            <TouchableOpacity
+              style={S.setPickerItem}
+              onPress={() => { setShowSetPicker(false); router.push('/manage-sets'); }}
+            >
+              <Text style={S.setPickerItemTxt}>Create a tile set first →</Text>
+            </TouchableOpacity>
+          ) : (
+            sets.map(s => {
+              const fpCount = Object.keys(s.fingerprints ?? {}).length;
+              return (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[S.setPickerItem, s.id === activeSetsId && S.setPickerItemActive]}
+                  onPress={() => { setActiveSetId(s.id); setShowSetPicker(false); }}
+                >
+                  <Text style={[S.setPickerItemTxt, s.id === activeSetsId && S.setPickerItemActiveTxt]}>
+                    {s.name}
+                  </Text>
+                  <Text style={S.setPickerItemMeta}>
+                    {fpCount >= 3 ? `${fpCount} refs` : 'incomplete'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
+          <TouchableOpacity
+            style={[S.setPickerItem, { borderTopWidth: 1, borderTopColor: '#f0f0f0' }]}
+            onPress={() => { setShowSetPicker(false); router.push('/manage-sets'); }}
+          >
+            <Text style={[S.setPickerItemTxt, { color: '#8B0000' }]}>Manage tile sets…</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -397,7 +405,9 @@ function GridGuide({
   viewDim: { width: number; height: number } | null;
   hasFingerprints: boolean;
 }) {
-  if (!viewDim) return null;
+  // Return empty view instead of null — returning null changes CameraView's
+  // child count which triggers a Fabric index-mismatch crash (New Arch).
+  if (!viewDim) return <View />;
 
   const guideW = viewDim.width - GUIDE_MARGIN_H * 2;
   const cellW  = guideW / TILE_COUNT;
@@ -507,7 +517,7 @@ const S = StyleSheet.create({
 
   // Set picker dropdown
   setPickerDropdown: {
-    position: 'absolute', top: 60, right: 16,
+    position: 'absolute', right: 16,
     backgroundColor: '#fff', borderRadius: 12,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
     minWidth: 200, zIndex: 100,

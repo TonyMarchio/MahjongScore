@@ -1,6 +1,6 @@
 import { Pattern, PatternCategory, ScoredHand, Player, GameState, Payment } from './types';
 
-// ─── All Patterns from Steven's Sheet ────────────────────────────────────────
+// ─── All Patterns from Stephen's Sheet ───────────────────────────────────────
 //
 // Grouped by category. The scoring screen will display these grouped.
 // Patterns marked tbd: true are flagged as unclear — we'll confirm with Stephen.
@@ -143,15 +143,15 @@ export const PATTERNS: Pattern[] = [
     id: 'ming_gang',
     chinese: '明槓', pinyin: 'ming2 gang4',
     english: 'Each exposed kong',
-    tai: 1, category: 'pengs_kongs',
-    notes: '1 tai per exposed kong declared.',
+    tai: 1, category: 'pengs_kongs', countable: true,
+    notes: '1 tai per exposed kong — tap + for each one.',
   },
   {
     id: 'an_gang',
     chinese: '每個暗槓', pinyin: 'mei3 ge4 an4 gang4',
     english: 'Each concealed kong',
-    tai: 2, category: 'pengs_kongs',
-    notes: '2 tai per concealed kong declared.',
+    tai: 2, category: 'pengs_kongs', countable: true,
+    notes: '2 tai per concealed kong — tap + for each one.',
   },
   {
     id: 'san_an_kan',
@@ -326,42 +326,27 @@ export function calculateTai(
   flowerCount: number,
   isDealer: boolean,
   isSelfDraw: boolean,
+  patternCounts: Record<string, number> = {},
 ): number {
 
-  // Special case: 小胡 = hand is capped at 1 tai, no dealer bonus
-  if (selectedPatternIds.includes('xiao_hu')) {
-    return 1;
-  }
-
-  // Special case: 八朵花 = 40 tai flat, hand ends immediately
-  if (selectedPatternIds.includes('ba_duo_hua')) {
-    return 40;
-  }
+  if (selectedPatternIds.includes('xiao_hu')) return 1;
+  if (selectedPatternIds.includes('ba_duo_hua')) return 40;
 
   let total = 0;
 
-  // Add tai for each selected pattern (excluding flower count patterns)
   for (const id of selectedPatternIds) {
     const pattern = getPattern(id);
     if (!pattern) continue;
-
-    // 每個花 is handled separately via flowerCount below
     if (id === 'mei_ge_hua') continue;
 
-    total += pattern.tai;
+    // Countable patterns (e.g. kongs) multiply tai by how many were declared
+    const count = pattern.countable ? (patternCounts[id] ?? 1) : 1;
+    total += pattern.tai * count;
   }
 
-  // Add flower tiles (1 tai each)
   total += flowerCount;
 
-  // Dealer bonus (automatically applied if winner is dealer)
-  if (isDealer) {
-    total += 1; // 莊家 = 1 tai
-  }
-
-  // Self draw (1 tai) — only add if not already in selectedPatternIds
-  // (user selects 自摸 manually, but we also use isSelfDraw to drive payment logic)
-  // Note: 自摸 is in the pattern list, so the user picks it — we don't double count here.
+  if (isDealer) total += 1;
 
   return total;
 }

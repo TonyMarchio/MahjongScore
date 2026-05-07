@@ -129,7 +129,7 @@ export default function CreateSetScreen() {
         </Text>
         <TextInput
           style={S.nameInput}
-          placeholder="e.g. Steven's set"
+          placeholder="e.g. Stephen's set"
           placeholderTextColor="#bbb"
           value={name}
           onChangeText={setName}

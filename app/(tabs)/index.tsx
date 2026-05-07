@@ -2,14 +2,15 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   View, Text, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, Switch,
+  StyleSheet, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEY } from './explore';
 import { CAMERA_PREFILL_KEY } from './camera';
 import { PATTERNS, calculateTai, calculatePayments, getPatternsByCategory, getNextDealerPlayerId } from '@/utils/scoring';
-import { GameState, Player, ScoredHand, PatternCategory } from '@/utils/types';
+import { GameState, ScoredHand, PatternCategory } from '@/utils/types';
+import { generateRandomHandConfig } from '@/utils/devSeedData';
 
 // ─── Category display config ──────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ const CATEGORY_ORDER: PatternCategory[] = [
   'situational', 'hand_quality', 'flowers', 'pengs_kongs', 'hand_shape', 'special',
 ];
 
-const AUTO_HANDLED = ['zi_mo', 'mei_ge_hua', 'wu_hua', 'wu_zi', 'wu_hua_wu_zi'];
+const AUTO_HANDLED = ['zhuang_jia', 'zi_mo', 'mei_ge_hua', 'wu_hua', 'wu_zi', 'wu_hua_wu_zi'];
 
 // ─── Default game state (used if none saved) ──────────────────────────────────
 
@@ -55,6 +56,7 @@ export default function ScoreHandScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [flowerCount, setFlowerCount] = useState(0);
   const [noHonors, setNoHonors] = useState(false);
+  const [patternCounts, setPatternCounts] = useState<Record<string, number>>({});
   const [scored, setScored] = useState(false);
   const [result, setResult] = useState<ScoredHand | null>(null);
 
@@ -120,7 +122,11 @@ export default function ScoreHandScreen() {
         patternIds.push('wu_zi');          // 1 tai — no honors only
       }
     }
-    const totalTai = calculateTai(patternIds, flowerCount, isDealer, isSelfDraw);
+    // Include countable patterns (kongs) from their counters
+    for (const [id, count] of Object.entries(patternCounts)) {
+      if (count > 0 && !patternIds.includes(id)) patternIds.push(id);
+    }
+    const totalTai = calculateTai(patternIds, flowerCount, isDealer, isSelfDraw, patternCounts);
     if (totalTai === 0) {
       Alert.alert('No Score', 'This hand has 0 tai — select at least one pattern before scoring.');
       return;
@@ -164,7 +170,19 @@ export default function ScoreHandScreen() {
     setSelectedIds(new Set());
     setFlowerCount(0);
     setNoHonors(false);
+    setPatternCounts({});
     setIsSelfDraw(true);
+    setScored(false);
+    setResult(null);
+  }
+
+  function handleRandomHand() {
+    const cfg = generateRandomHandConfig();
+    setSelectedIds(new Set(cfg.selectedIds));
+    setPatternCounts(cfg.patternCounts);
+    setFlowerCount(cfg.flowerCount);
+    setNoHonors(cfg.noHonors);
+    setIsSelfDraw(cfg.isSelfDraw);
     setScored(false);
     setResult(null);
   }
@@ -210,10 +228,13 @@ export default function ScoreHandScreen() {
         {result.selectedPatternIds.map(id => {
           const p = PATTERNS.find(p => p.id === id);
           if (!p) return null;
+          const count = p.countable ? (patternCounts[id] ?? 1) : 1;
           return (
             <View key={id} style={styles.patternSummaryRow}>
-              <Text style={styles.patternSummaryLabel}>{p.english}</Text>
-              <Text style={styles.patternSummaryTai}>+{p.tai} tai</Text>
+              <Text style={styles.patternSummaryLabel}>
+                {count > 1 ? `${count}× ` : ''}{p.english}
+              </Text>
+              <Text style={styles.patternSummaryTai}>+{p.tai * count} tai</Text>
             </View>
           );
         })}
@@ -241,7 +262,14 @@ export default function ScoreHandScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}>
-      <Text style={styles.title}>Score Hand</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Score Hand</Text>
+        {__DEV__ && (
+          <TouchableOpacity style={styles.devRandomBtn} onPress={handleRandomHand}>
+            <Text style={styles.devRandomBtnText}>🎲 Random</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <View style={styles.dealerBanner}>
         <Text style={styles.dealerBannerText}>
           🀄 Dealer: {game.players.find(p => p.id === game.dealerPlayerId)?.name ?? '—'}
@@ -346,6 +374,51 @@ export default function ScoreHandScreen() {
           <View key={cat}>
             <Text style={styles.sectionTitle}>{CATEGORY_LABELS[cat]}</Text>
             {patterns.map(p => {
+              if (p.countable) {
+                const count = patternCounts[p.id] ?? 0;
+                const active = count > 0;
+                return (
+                  <View key={p.id} style={[styles.patternRow, active && styles.patternRowActive]}>
+                    <View style={styles.patternInfo}>
+                      <Text style={[styles.patternEnglish, active && styles.patternTextActive]}>
+                        {p.english}
+                      </Text>
+                      <Text style={[styles.patternChinese, active && styles.patternSubActive]}>
+                        {p.chinese}  {p.pinyin}
+                      </Text>
+                      {p.notes && <Text style={styles.patternNotes}>{p.notes}</Text>}
+                    </View>
+                    <View style={styles.inlineCounter}>
+                      <TouchableOpacity
+                        style={[styles.inlineCounterBtn, active && styles.inlineCounterBtnActive]}
+                        onPress={() => setPatternCounts(prev => {
+                          const c = prev[p.id] ?? 0;
+                          if (c <= 0) return prev;
+                          const next = { ...prev };
+                          if (c === 1) delete next[p.id];
+                          else next[p.id] = c - 1;
+                          return next;
+                        })}
+                      >
+                        <Text style={[styles.inlineCounterBtnText, active && styles.inlineCounterBtnTextActive]}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={[styles.inlineCounterValue, active && styles.patternTextActive]}>
+                        {count}
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.inlineCounterBtn, active && styles.inlineCounterBtnActive]}
+                        onPress={() => setPatternCounts(prev => ({ ...prev, [p.id]: (prev[p.id] ?? 0) + 1 }))}
+                      >
+                        <Text style={[styles.inlineCounterBtnText, active && styles.inlineCounterBtnTextActive]}>+</Text>
+                      </TouchableOpacity>
+                      <Text style={[styles.patternTai, active && styles.patternTextActive]}>
+                        {p.tai} tai ea
+                      </Text>
+                    </View>
+                  </View>
+                );
+              }
+
               const isSelected = selectedIds.has(p.id);
               return (
                 <TouchableOpacity
@@ -388,10 +461,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f0e8' },
   content:   { padding: 20, paddingBottom: 80 },
   // paddingTop is set dynamically via insets (see ScrollView below)
+  titleRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 8, marginTop: 12,
+  },
   title: {
     fontSize: 28, fontWeight: '700', color: '#8B0000',
-    marginBottom: 8, marginTop: 12,
   },
+  devRandomBtn: {
+    backgroundColor: '#1a1a2e', borderRadius: 10,
+    paddingVertical: 8, paddingHorizontal: 14,
+  },
+  devRandomBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   sectionTitle: {
     fontSize: 13, fontWeight: '600', color: '#888',
     marginTop: 22, marginBottom: 10,
@@ -440,6 +521,20 @@ const styles = StyleSheet.create({
   patternTai:       { fontSize: 15, fontWeight: '700', color: '#8B0000', marginLeft: 10 },
   patternTextActive:{ color: '#fff' },
   patternSubActive: { color: 'rgba(255,255,255,0.7)' },
+
+  // Inline counter (for countable patterns like kongs)
+  inlineCounter:          { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  inlineCounterBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(139,0,0,0.12)', alignItems: 'center', justifyContent: 'center',
+  },
+  inlineCounterBtnActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  inlineCounterBtnText:   { color: '#8B0000', fontSize: 18, fontWeight: '700', lineHeight: 22 },
+  inlineCounterBtnTextActive: { color: '#fff' },
+  inlineCounterValue: {
+    fontSize: 20, fontWeight: '700', color: '#333',
+    minWidth: 24, textAlign: 'center' as const,
+  },
 
   // Result screen
   resultCard: {

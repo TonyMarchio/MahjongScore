@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, StyleSheet,
+  ScrollView, StyleSheet, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Wind, GameState, Player } from '@/utils/types';
+import { seedSimData } from '@/utils/devSeedData';
 
 const WINDS: Wind[] = ['east', 'south', 'west', 'north'];
 const WIND_LABEL: Record<Wind, string> = {
@@ -36,8 +37,9 @@ export default function GameSetupScreen() {
   const [stakePerTai, setStakePerTai] = useState('0.25');
   const [dealerPlayerId, setDealerPlayerId] = useState('p1');
   const loaded = useRef(false);
-  // Holds the full loaded game so we can preserve history & scores on save
   const savedGameRef = useRef<GameState>(DEFAULT_GAME_STATE);
+  const [seedStatus, setSeedStatus] = useState<'idle' | 'seeding' | 'done'>('idle');
+  const [seedResult, setSeedResult] = useState<{ sessions: number; totalHands: number } | null>(null);
 
   // Load saved settings on mount
   useEffect(() => {
@@ -74,6 +76,34 @@ export default function GameSetupScreen() {
   }, [playerNames, prevalingWind, stakePerTai, dealerPlayerId]);
 
   const names = playerNames.map((n, i) => n.trim() || `Player ${i + 1}`);
+
+  function handleSeedData() {
+    Alert.alert(
+      'Seed Sim Data',
+      'Generate 24 simulated sessions (2 nights × 12 games, ~450 hands) using the current players?\n\nThis overwrites any existing history and all-time totals.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Seed It',
+          onPress: async () => {
+            setSeedStatus('seeding');
+            setSeedResult(null);
+            try {
+              const result = await seedSimData(
+                savedGameRef.current.players,
+                savedGameRef.current.stakePerTai,
+              );
+              setSeedResult(result);
+              setSeedStatus('done');
+            } catch (e) {
+              setSeedStatus('idle');
+              Alert.alert('Seed failed', String(e));
+            }
+          },
+        },
+      ],
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}>
@@ -154,6 +184,26 @@ export default function GameSetupScreen() {
       />
 
       <Text style={styles.autoSaveNote}>Settings save automatically</Text>
+
+      {__DEV__ && (
+        <View style={styles.devSection}>
+          <Text style={styles.devLabel}>DEV TOOLS</Text>
+          <TouchableOpacity
+            style={[styles.devBtn, seedStatus === 'seeding' && styles.devBtnOff]}
+            onPress={handleSeedData}
+            disabled={seedStatus === 'seeding'}
+          >
+            <Text style={styles.devBtnText}>
+              {seedStatus === 'idle' && '🎲 Seed 24 Sim Games'}
+              {seedStatus === 'seeding' && 'Seeding...'}
+              {seedStatus === 'done' && `✓ Done — ${seedResult?.sessions} sessions, ${seedResult?.totalHands} hands`}
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.devHint}>
+            Uses current players · overwrites history &amp; all-time totals · check Scores tab
+          </Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -187,4 +237,23 @@ const styles = StyleSheet.create({
   chipText:       { fontSize: 15, color: '#333', fontWeight: '500' },
   chipTextActive: { color: '#fff', fontWeight: '700' },
   autoSaveNote: { textAlign: 'center', color: '#aaa', fontSize: 13, marginTop: 32, fontStyle: 'italic' },
+
+  devSection: {
+    marginTop: 40, borderTopWidth: 1, borderTopColor: '#e0d8cc',
+    paddingTop: 20,
+  },
+  devLabel: {
+    fontSize: 10, fontWeight: '800', color: '#bbb',
+    letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10,
+  },
+  devBtn: {
+    backgroundColor: '#1a1a2e', borderRadius: 12,
+    paddingVertical: 16, paddingHorizontal: 20, alignItems: 'center',
+  },
+  devBtnOff: { opacity: 0.4 },
+  devBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  devHint: {
+    fontSize: 11, color: '#bbb', marginTop: 8,
+    textAlign: 'center', fontStyle: 'italic',
+  },
 });

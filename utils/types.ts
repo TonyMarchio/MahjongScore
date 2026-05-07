@@ -12,15 +12,16 @@ export interface Player {
   score: number;    // running total in dollars/cents
 }
 
-// ─── Scoring Patterns (from Steven's sheet) ───────────────────────────────────
+// ─── Scoring Patterns (from Stephen's sheet) ─────────────────────────────────
 
 export interface Pattern {
   id: string;           // unique key, e.g. 'zhuang_jia'
   chinese: string;      // e.g. '莊家'
   pinyin: string;       // e.g. 'zhuang1 jia1'
   english: string;      // e.g. 'Dealer bonus'
-  tai: number;          // points value
+  tai: number;          // points value per occurrence
   category: PatternCategory;
+  countable?: boolean;  // true = renders as a counter (tai × count), not a toggle
   notes?: string;       // any special rules
 }
 

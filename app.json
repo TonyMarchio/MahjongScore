@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "MahjongScore",
+    "name": "Mahjong Vision",
     "slug": "MahjongScore",
-    "version": "1.0.1",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mahjongscore",
@@ -13,6 +13,7 @@
       "bundleIdentifier": "com.anthonymarchio.mahjongscore",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "LSSupportsOpeningDocumentsInPlace": false,
         "NSCameraUsageDescription": "Used to scan and identify mahjong tiles for scoring",
         "CFBundleDocumentTypes": [
           {
