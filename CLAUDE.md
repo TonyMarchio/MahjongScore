@@ -28,15 +28,16 @@ Taiwanese 16-tile mahjong scoring app for iOS. Built with Expo (SDK 54), React N
 - Taiwanese rules: 16-tile hands, self-draw = all 3 pay, discard = only discarder pays
 - Flower/season tiles are bonus tiles (0-8), set aside from the 16-tile hand
 
-## Roboflow Integration (in progress)
-- Using a Roboflow **Workflow** (not direct model inference) at:
-  `POST https://serverless.roboflow.com/anthonys-workspace-ywqze/workflows/detect-and-classify`
-- Workflow is a detect-and-classify pipeline; still being configured on the Roboflow side
-- Target model: mahjong-baq4s by Jon Chan on Roboflow Universe (42 classes, CC BY 4.0)
+## Roboflow Integration
+- Using direct hosted inference at:
+  `POST https://serverless.roboflow.com/{ENDPOINT}/{VERSION}?api_key={KEY}`
+- Model: mahjong-baq4s/83 by Jon Chan on Roboflow Universe (42 classes, CC BY 4.0)
 - Tile classes: 1B-9B (bamboo), 1C-9C (characters), 1D-9D (dots), EW/SW/WW/NW (winds), RD/GD/WD (dragons), 1F-4F (flowers), 1S-4S (seasons)
-- Send JSON body `{ api_key, inputs: { image: { type: "base64", value: "..." } } }`
-- Receive workflow outputs array; `services/roboflowService.ts` handles response shape variations
-- Environment variables in `.env` (never commit): `ROBOFLOW_API_KEY`, `ROBOFLOW_MODEL_ENDPOINT`, `ROBOFLOW_MODEL_VERSION`
+- Body: raw base64 JPEG string, `Content-Type: application/x-www-form-urlencoded`
+- Response: `{ predictions: [{ class, confidence, x, y, width, height }] }` (center-based coords)
+- Environment variables in `.env` (never commit) — must use `EXPO_PUBLIC_` prefix for Expo to embed them:
+  `EXPO_PUBLIC_ROBOFLOW_API_KEY`, `EXPO_PUBLIC_ROBOFLOW_MODEL_ENDPOINT`, `EXPO_PUBLIC_ROBOFLOW_MODEL_VERSION`
+- Flow: camera.tsx → resize to 1280px → base64 → detectTiles() → tile-confirm.tsx → CAMERA_PREFILL_KEY → Score Hand
 
 ## Dependencies of Note
 - expo-camera (CameraView, not legacy Camera)

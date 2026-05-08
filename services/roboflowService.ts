@@ -1,9 +1,10 @@
 import { TILE_CLASS_MAP, BONUS_CODES } from '@/constants/tileMap';
 import { DetectedTile } from '@/types/tiles';
 
-const API_KEY      = process.env.EXPO_PUBLIC_ROBOFLOW_API_KEY;
-const WORKFLOW_URL = process.env.EXPO_PUBLIC_ROBOFLOW_WORKFLOW_URL
-  ?? 'https://serverless.roboflow.com/anthonys-workspace-ywqze/workflows/detect-and-classify';
+const API_KEY  = process.env.EXPO_PUBLIC_ROBOFLOW_API_KEY ?? '';
+const ENDPOINT = process.env.EXPO_PUBLIC_ROBOFLOW_MODEL_ENDPOINT ?? 'mahjong-baq4s';
+const VERSION  = process.env.EXPO_PUBLIC_ROBOFLOW_MODEL_VERSION  ?? '83';
+const INFER_URL = `https://serverless.roboflow.com/${ENDPOINT}/${VERSION}`;
 
 const CONF_THRESH = 0.5;
 const IOU_THRESH  = 0.5;
@@ -18,9 +19,9 @@ interface RawPrediction {
 }
 
 function iou(a: RawPrediction, b: RawPrediction): number {
-  const aL = a.x - a.width / 2, aR = a.x + a.width / 2;
+  const aL = a.x - a.width / 2,  aR = a.x + a.width / 2;
   const aT = a.y - a.height / 2, aB = a.y + a.height / 2;
-  const bL = b.x - b.width / 2, bR = b.x + b.width / 2;
+  const bL = b.x - b.width / 2,  bR = b.x + b.width / 2;
   const bT = b.y - b.height / 2, bB = b.y + b.height / 2;
   const iW = Math.max(0, Math.min(aR, bR) - Math.max(aL, bL));
   const iH = Math.max(0, Math.min(aB, bB) - Math.max(aT, bT));
@@ -38,56 +39,22 @@ function dedup(preds: RawPrediction[]): RawPrediction[] {
   return kept;
 }
 
-function extractPredictions(data: unknown): RawPrediction[] {
-  // Log full response so we can see the workflow output structure
-  console.log('[Roboflow] raw response:', JSON.stringify(data, null, 2));
-
-  // Roboflow Workflow responses wrap outputs in an array
-  // Try common shapes and fall back gracefully
-  const d = data as Record<string, unknown>;
-
-  if (Array.isArray(d.outputs) && d.outputs.length > 0) {
-    const first = d.outputs[0] as Record<string, unknown>;
-    // shape: { outputs: [{ predictions: { predictions: [...] } }] }
-    if (first.predictions && typeof first.predictions === 'object') {
-      const inner = first.predictions as Record<string, unknown>;
-      if (Array.isArray(inner.predictions)) return inner.predictions as RawPrediction[];
-      if (Array.isArray(inner)) return inner as RawPrediction[];
-    }
-    // shape: { outputs: [{ predictions: [...] }] }
-    if (Array.isArray(first.predictions)) return first.predictions as RawPrediction[];
-  }
-
-  // Direct inference fallback: { predictions: [...] }
-  if (Array.isArray(d.predictions)) return d.predictions as RawPrediction[];
-
-  console.warn('[Roboflow] could not find predictions in response');
-  return [];
-}
-
 export async function detectTiles(base64Image: string): Promise<DetectedTile[]> {
   if (!API_KEY) throw new Error('MISSING_KEY');
 
-  console.log('[Roboflow] POST', WORKFLOW_URL);
+  const url = `${INFER_URL}?api_key=${API_KEY}`;
 
   let response: Response;
   try {
-    response = await fetch(WORKFLOW_URL, {
+    response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: API_KEY,
-        inputs: {
-          image: { type: 'base64', value: base64Image },
-        },
-      }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: base64Image,
     });
   } catch (networkErr) {
-    console.error('[Roboflow] fetch failed:', networkErr);
     throw networkErr;
   }
 
-  console.log('[Roboflow] status:', response.status);
   if (response.status === 401 || response.status === 403) throw new Error('INVALID_KEY');
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -96,7 +63,7 @@ export async function detectTiles(base64Image: string): Promise<DetectedTile[]> 
   }
 
   const data = await response.json();
-  const preds = extractPredictions(data);
+  const preds: RawPrediction[] = Array.isArray(data.predictions) ? data.predictions : [];
 
   const filtered = preds.filter(p => p.confidence >= CONF_THRESH);
   const deduped  = dedup(filtered);
