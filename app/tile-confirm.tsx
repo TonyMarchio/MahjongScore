@@ -139,7 +139,7 @@ export default function TileConfirmScreen() {
       <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent}>
         {/* Hand tiles */}
         <View style={S.sectionHeader}>
-          <Text style={S.sectionTitle}>Hand  •  {handTiles.length}/17</Text>
+          <Text style={S.sectionTitle}>Hand: {handTiles.length}/17 tiles</Text>
           <TouchableOpacity
             style={S.addBtn}
             onPress={() => setPickerContext({ mode: 'add', section: 'hand' })}
@@ -163,7 +163,7 @@ export default function TileConfirmScreen() {
 
         {/* Bonus tiles */}
         <View style={[S.sectionHeader, { marginTop: 16 }]}>
-          <Text style={S.sectionTitle}>Bonus tiles  •  {bonusTiles.length}</Text>
+          <Text style={S.sectionTitle}>Bonus tiles: {bonusTiles.length}</Text>
           <TouchableOpacity
             style={S.addBtn}
             onPress={() => setPickerContext({ mode: 'add', section: 'bonus' })}

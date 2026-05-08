@@ -26,7 +26,8 @@ Taiwanese 16-tile mahjong scoring app for iOS. Built with Expo (SDK 54), React N
 - Camera prefill: camera screen writes detection results to AsyncStorage key `camera_prefill`, scoring screen reads and clears it on focus
 - Scoring patterns defined in `utils/scoring.ts` PATTERNS array — each has id, chinese, pinyin, english, tai, category. Some are countable (kongs).
 - Taiwanese rules: 16-tile hands, self-draw = all 3 pay, discard = only discarder pays
-- Flower/season tiles are bonus tiles (0-8), set aside from the 16-tile hand
+- A winning hand laid out on the table shows **17 regular tiles** (16-tile hand + the winning tile) plus 0–8 bonus tiles (flowers/seasons) set aside separately
+- Flower/season tiles are bonus tiles (0-8), set aside from the 16-tile hand; tile-confirm shows "Hand: n/17 tiles" as a guide (not a hard gate)
 
 ## Roboflow Integration
 - Using direct hosted inference at:
