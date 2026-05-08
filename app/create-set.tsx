@@ -9,9 +9,14 @@ import { router, useLocalSearchParams } from 'expo-router';
 import {
   TileSet, TileCategory, TILE_CATEGORIES,
   loadTileSets, saveTileSets, persistTileImage, precomputeFingerprints,
+  guideRectToPhotoCrop, cropTileRegion, normalizePhotoOrientation,
 } from '@/utils/tileSets';
 
 type Step = 'name' | TileCategory | 'summary';
+
+// Target box shown in the camera viewfinder — user centers the tile face here
+const TILE_GUIDE_W = 160;
+const TILE_GUIDE_H = 220;
 
 export default function CreateSetScreen() {
   const insets = useSafeAreaInsets();
@@ -24,6 +29,8 @@ export default function CreateSetScreen() {
   const [captures, setCaptures] = useState<Partial<Record<TileCategory, string>>>({});
   const [preview, setPreview]   = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
+  const [viewDim, setViewDim]   = useState<{ width: number; height: number } | null>(null);
+  const pendingPhoto = useRef<{ uri: string; width: number; height: number } | null>(null);
 
   // When editing, pre-load existing references
   useEffect(() => {
@@ -57,18 +64,36 @@ export default function CreateSetScreen() {
   }
 
   async function handleCapture() {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current || !viewDim) return;
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
-      if (photo) setPreview(photo.uri);
+      const raw = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      if (!raw) return;
+      const photo = await normalizePhotoOrientation(raw.uri);
+      pendingPhoto.current = { uri: photo.uri, width: photo.width, height: photo.height };
+      setPreview(photo.uri);
     } catch {
       Alert.alert('Error', 'Could not take photo — try again.');
     }
   }
 
-  function handleUsePhoto() {
-    if (!preview || !currentCat) return;
-    setCaptures(prev => ({ ...prev, [currentCat.key]: preview }));
+  async function handleUsePhoto() {
+    if (!preview || !currentCat || !viewDim) return;
+    const photo = pendingPhoto.current;
+    let finalUri = preview;
+    if (photo) {
+      try {
+        const guideX = (viewDim.width  - TILE_GUIDE_W) / 2;
+        const guideY = (viewDim.height - TILE_GUIDE_H) / 2;
+        const photoCrop = guideRectToPhotoCrop(
+          { x: guideX, y: guideY, width: TILE_GUIDE_W, height: TILE_GUIDE_H },
+          viewDim,
+          { width: photo.width, height: photo.height },
+        );
+        finalUri = await cropTileRegion(photo.uri, photoCrop);
+      } catch { /* fall back to full photo */ }
+    }
+    setCaptures(prev => ({ ...prev, [currentCat.key]: finalUri }));
+    pendingPhoto.current = null;
     setPreview(null);
     goNext();
   }
@@ -108,8 +133,9 @@ export default function CreateSetScreen() {
         const current = await loadTileSets();
         await saveTileSets(current.map(s => s.id === withFp.id ? withFp : s));
       }).catch(() => { /* non-fatal — falls back to OCR */ });
-    } catch {
-      Alert.alert('Error', 'Could not save — please try again.');
+    } catch (e) {
+      console.error('[CreateSet] save failed:', e);
+      Alert.alert('Error', `Could not save — ${String(e)}`);
     } finally {
       setSaving(false);
     }
@@ -234,8 +260,11 @@ export default function CreateSetScreen() {
   // ── Step: Live camera capture ─────────────────────────────────────────────────
 
   return (
-    <View style={S.cameraRoot}>
+    <View style={S.cameraRoot} onLayout={e => setViewDim(e.nativeEvent.layout)}>
       <CameraView ref={cameraRef} style={S.camera} facing="back">
+
+        {/* Tile target guide */}
+        <View style={S.tileGuide} pointerEvents="none" />
 
         {/* Progress dots */}
         <View style={[S.progressRow, { paddingTop: insets.top + 12 }]}>
@@ -316,6 +345,14 @@ const S = StyleSheet.create({
   centered:   { justifyContent: 'center', alignItems: 'center', gap: 20, padding: 32 },
   camera:     { flex: 1 },
   gateText:   { fontSize: 16, color: '#ddd', textAlign: 'center', lineHeight: 24 },
+  tileGuide: {
+    position: 'absolute',
+    width: TILE_GUIDE_W, height: TILE_GUIDE_H,
+    top: '50%', left: '50%',
+    marginTop: -(TILE_GUIDE_H / 2), marginLeft: -(TILE_GUIDE_W / 2),
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 10, borderStyle: 'dashed',
+  },
 
   // Progress dots
   progressRow:   { flexDirection: 'row', justifyContent: 'center', gap: 8, paddingBottom: 12 },

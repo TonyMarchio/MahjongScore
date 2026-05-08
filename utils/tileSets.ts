@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { generateFingerprint, computeDistance } from 'tile-vision';
 
@@ -20,15 +20,16 @@ export interface TileSet {
 export const TILE_CATEGORIES: {
   key: TileCategory;
   label: string;
+  short: string;
   chinese: string;
   hint: string;
 }[] = [
-  { key: 'characters', label: 'Character tile', chinese: '萬', hint: 'Any 1–9 character (萬) tile' },
-  { key: 'bamboo',     label: 'Bamboo tile',    chinese: '竹', hint: 'Any bamboo / sticks tile' },
-  { key: 'balls',      label: 'Ball tile',       chinese: '餅', hint: 'Any circles / balls tile' },
-  { key: 'wind',       label: 'Wind tile',       chinese: '風', hint: 'Any wind tile — East, South, West, or North' },
-  { key: 'dragon',     label: 'Dragon tile',     chinese: '字', hint: 'Any dragon tile — 中, 發, or 白' },
-  { key: 'flower',     label: 'Flower tile',     chinese: '花', hint: 'Any flower or season tile' },
+  { key: 'characters', label: 'Character tile', short: 'Char',   chinese: '萬', hint: 'Any 1–9 character (萬) tile' },
+  { key: 'bamboo',     label: 'Bamboo tile',    short: 'Bamboo', chinese: '竹', hint: 'Any bamboo / sticks tile' },
+  { key: 'balls',      label: 'Ball tile',       short: 'Balls',  chinese: '餅', hint: 'Any circles / balls tile' },
+  { key: 'wind',       label: 'Wind tile',       short: 'Wind',   chinese: '風', hint: 'Any wind tile — East, South, West, or North' },
+  { key: 'dragon',     label: 'Dragon tile',     short: 'Dragon', chinese: '字', hint: 'Any dragon tile — 中, 發, or 白' },
+  { key: 'flower',     label: 'Flower tile',     short: 'Flower', chinese: '花', hint: 'Any flower or season tile' },
 ];
 
 // Honor categories — tiles we can detect via OCR rather than appearance
@@ -135,6 +136,21 @@ export async function classifyTile(
   const confidence = margin > 0.15 ? 'high' : 'low';
 
   return { category: bestCategory, confidence };
+}
+
+/**
+ * Applies EXIF orientation to a photo so its pixel dimensions match the
+ * logical (view) orientation. iOS camera sensor is physically landscape, so
+ * photo.width/height from takePictureAsync may be swapped vs. the portrait view.
+ * Call this once after capture before using photo dimensions for any mapping.
+ */
+export async function normalizePhotoOrientation(
+  uri: string,
+): Promise<{ uri: string; width: number; height: number }> {
+  const result = await ImageManipulator.manipulateAsync(
+    uri, [], { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+  );
+  return { uri: result.uri, width: result.width, height: result.height };
 }
 
 /**

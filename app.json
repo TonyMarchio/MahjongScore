@@ -15,6 +15,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "LSSupportsOpeningDocumentsInPlace": false,
         "NSCameraUsageDescription": "Used to scan and identify mahjong tiles for scoring",
+        "NSPhotoLibraryUsageDescription": "Used to select saved tile images for recognition",
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "Mahjong Tile Set",
@@ -53,6 +54,7 @@
     "plugins": [
       "expo-router",
       "expo-camera",
+      "expo-image-picker",
       ["expo-build-properties", {
         "ios": {
           "deploymentTarget": "16.0"
