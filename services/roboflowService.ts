@@ -6,7 +6,7 @@ const ENDPOINT = process.env.EXPO_PUBLIC_ROBOFLOW_MODEL_ENDPOINT ?? 'mahjong-baq
 const VERSION  = process.env.EXPO_PUBLIC_ROBOFLOW_MODEL_VERSION  ?? '83';
 const INFER_URL = `https://serverless.roboflow.com/${ENDPOINT}/${VERSION}`;
 
-const CONF_THRESH = 0.5;
+const CONF_THRESH = 0.3;
 const IOU_THRESH  = 0.5;
 
 interface RawPrediction {
