@@ -65,8 +65,12 @@ export async function detectTiles(base64Image: string): Promise<DetectedTile[]> 
   const data = await response.json();
   const preds: RawPrediction[] = Array.isArray(data.predictions) ? data.predictions : [];
 
+  console.log(`[Roboflow] raw predictions: ${preds.length}`);
+  preds.forEach(p => console.log(`  ${p.class} ${(p.confidence * 100).toFixed(0)}%`));
+
   const filtered = preds.filter(p => p.confidence >= CONF_THRESH);
   const deduped  = dedup(filtered);
+  console.log(`[Roboflow] after filter (≥${CONF_THRESH}): ${filtered.length}, after dedup: ${deduped.length}`);
   deduped.sort((a, b) => a.x - b.x);
 
   return deduped.map(p => ({

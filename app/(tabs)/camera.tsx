@@ -78,12 +78,16 @@ export default function CameraScreen() {
   async function analyzePhoto(uri: string, cropRect?: CropRect) {
     setScreenState('analyzing');
     try {
+      // After cropping, only downsample — never upscale a small crop.
+      // For full-photo library picks, cap at 1920px to limit payload size.
+      const MAX_FULL = 1920;
+      const actions = cropRect
+        ? [{ crop: cropRect }]
+        : [{ resize: { width: MAX_FULL } }];
       const resized = await ImageManipulator.manipulateAsync(
         uri,
-        cropRect
-          ? [{ crop: cropRect }, { resize: { width: 1280 } }]
-          : [{ resize: { width: 1280 } }],
-        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        actions,
+        { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
 
       const tiles = await detectTiles(resized.base64!);
