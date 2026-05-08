@@ -60,6 +60,7 @@ export default function CameraScreen() {
 
   useFocusEffect(useCallback(() => {
     setIsFocused(true);
+    setScreenState('preview');
     return () => setIsFocused(false);
   }, []));
 
