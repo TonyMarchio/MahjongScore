@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mahjong Vision",
     "slug": "MahjongScore",
-    "version": "1.1.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mahjongscore",
@@ -10,6 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
+      "buildNumber": "1",
       "bundleIdentifier": "com.anthonymarchio.mahjongscore",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

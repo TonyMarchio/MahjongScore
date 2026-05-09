@@ -10,53 +10,24 @@ import { useFocusEffect, router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { detectTiles } from '@/services/roboflowService';
-import { guideRectToPhotoCrop } from '@/utils/tileSets';
+import { detectTilesWithVision } from '@/utils/claudeVisionService';
 import { PendingDetection } from '@/types/tiles';
 
 export const PENDING_DETECTION_KEY = 'roboflow_pending_detection';
 export const CAMERA_PREFILL_KEY    = 'camera_prefill';
 
-// Guide overlay dimensions
-const GUIDE_WIDTH_RATIO = 0.70;  // fraction of screen width
-const GUIDE_ASPECT      = 2.5;   // width : height
+const USE_CLAUDE = !!process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
 
 type ScreenState = 'preview' | 'analyzing' | 'error';
-type ErrorKind   = 'network' | 'no_tiles' | 'api_key' | 'unknown';
-type ViewDim     = { width: number; height: number };
-type CropRect    = { originX: number; originY: number; width: number; height: number };
-
-// ─── Guide overlay ────────────────────────────────────────────────────────────
-// Always rendered as a single View — returning null would change CameraView's
-// child count and trigger a Fabric index-mismatch crash (New Arch).
-
-function GuideOverlay({ viewDim }: { viewDim: ViewDim | null }) {
-  if (!viewDim) return <View />;
-
-  const guideW = viewDim.width * GUIDE_WIDTH_RATIO;
-  const guideH = guideW / GUIDE_ASPECT;
-  const guideX = (viewDim.width - guideW) / 2;
-  const guideY = (viewDim.height - guideH) / 2 - 30;
-
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View style={[S.guide, { left: guideX, top: guideY, width: guideW, height: guideH }]} />
-      <View style={[S.guideLabelWrap, { top: guideY + guideH + 10, left: guideX, width: guideW }]}>
-        <Text style={S.guideLabel}>Frame your winning hand and bonus tiles inside the box</Text>
-      </View>
-    </View>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
+type ErrorKind   = 'network' | 'no_tiles' | 'api_key' | 'timeout' | 'unknown';
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef    = useRef<CameraView>(null);
+  const cameraRef  = useRef<CameraView>(null);
   const [screenState, setScreenState] = useState<ScreenState>('preview');
   const [errorKind,   setErrorKind]   = useState<ErrorKind>('unknown');
   const [isFocused,   setIsFocused]   = useState(false);
-  const [viewDim,     setViewDim]     = useState<ViewDim | null>(null);
 
   useFocusEffect(useCallback(() => {
     setIsFocused(true);
@@ -64,33 +35,18 @@ export default function CameraScreen() {
     return () => setIsFocused(false);
   }, []));
 
-  function guideRect(vd: ViewDim): { x: number; y: number; width: number; height: number } {
-    const guideW = vd.width  * GUIDE_WIDTH_RATIO;
-    const guideH = guideW / GUIDE_ASPECT;
-    return {
-      x:      (vd.width  - guideW) / 2,
-      y:      (vd.height - guideH) / 2 - 30,
-      width:  guideW,
-      height: guideH,
-    };
-  }
-
-  async function analyzePhoto(uri: string, cropRect?: CropRect) {
+  async function analyzePhoto(uri: string) {
     setScreenState('analyzing');
     try {
-      // After cropping, only downsample — never upscale a small crop.
-      // For full-photo library picks, cap at 1920px to limit payload size.
-      const MAX_FULL = 1920;
-      const actions = cropRect
-        ? [{ crop: cropRect }]
-        : [{ resize: { width: MAX_FULL } }];
       const resized = await ImageManipulator.manipulateAsync(
         uri,
-        actions,
+        [{ resize: { width: 1920 } }],
         { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
 
-      const tiles = await detectTiles(resized.base64!);
+      const tiles = USE_CLAUDE
+        ? await detectTilesWithVision(resized.base64!)
+        : await detectTiles(resized.base64!);
 
       if (tiles.length === 0) {
         setErrorKind('no_tiles');
@@ -108,22 +64,18 @@ export default function CameraScreen() {
       router.push('/tile-confirm' as never);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
-      if (msg === 'MISSING_KEY' || msg === 'INVALID_KEY') {
-        setErrorKind('api_key');
-      } else {
-        setErrorKind('network');
-      }
+      if (msg === 'TIMEOUT')        setErrorKind('timeout');
+      else if (msg.includes('KEY')) setErrorKind('api_key');
+      else                          setErrorKind('network');
       setScreenState('error');
     }
   }
 
   async function handleCapture() {
-    if (!cameraRef.current || !viewDim) return;
+    if (!cameraRef.current) return;
     const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
     if (!photo) return;
-    const guide    = guideRect(viewDim);
-    const cropRect = guideRectToPhotoCrop(guide, viewDim, { width: photo.width, height: photo.height });
-    await analyzePhoto(photo.uri, cropRect);
+    await analyzePhoto(photo.uri);
   }
 
   async function handlePickFromLibrary() {
@@ -137,6 +89,19 @@ export default function CameraScreen() {
   }
 
   function handleRetry() { setScreenState('preview'); }
+
+  // ── Not configured ────────────────────────────────────────────────────────
+
+  if (!USE_CLAUDE) {
+    return (
+      <View style={[S.root, S.centered, { paddingTop: insets.top }]}>
+        <Text style={S.gateTitle}>Camera Scoring Not Available</Text>
+        <Text style={S.gateBody}>
+          Camera scoring requires an Anthropic API key. Score your hand manually using the Score Hand tab.
+        </Text>
+      </View>
+    );
+  }
 
   // ── Permission gate ────────────────────────────────────────────────────────
 
@@ -160,8 +125,8 @@ export default function CameraScreen() {
     return (
       <View style={[S.root, S.centered]}>
         <ActivityIndicator size="large" color="#8B0000" />
-        <Text style={S.analyzingTitle}>Detecting tiles…</Text>
-        <Text style={S.analyzingBody}>Sending to Roboflow AI</Text>
+        <Text style={S.analyzingTitle}>Analyzing tiles…</Text>
+        <Text style={S.analyzingBody}>{USE_CLAUDE ? 'Claude Vision AI' : 'Roboflow AI'}</Text>
       </View>
     );
   }
@@ -172,15 +137,19 @@ export default function CameraScreen() {
     const msgs: Record<ErrorKind, { title: string; body: string }> = {
       no_tiles: {
         title: 'No Tiles Detected',
-        body:  'Make sure tiles are face-up, well-lit, and clearly visible inside the guide box.',
+        body:  'Make sure tiles are face-up, well-lit, and clearly visible in the photo.',
       },
       api_key: {
         title: 'API Key Problem',
-        body:  'Check that EXPO_PUBLIC_ROBOFLOW_API_KEY is set correctly in your .env file.',
+        body:  'Check that your API key is set correctly in the .env file.',
       },
       network: {
         title: "Couldn't Reach Detection Server",
         body:  'Check your internet connection and try again.',
+      },
+      timeout: {
+        title: 'Analysis Timed Out',
+        body:  'Analysis timed out. Try again or score manually.',
       },
       unknown: {
         title: 'Something Went Wrong',
@@ -195,9 +164,16 @@ export default function CameraScreen() {
         <TouchableOpacity style={S.primaryBtn} onPress={handleRetry}>
           <Text style={S.primaryBtnTxt}>Try Again</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[S.secondaryBtn, { marginTop: 12 }]} onPress={handlePickFromLibrary}>
-          <Text style={S.secondaryBtnTxt}>Pick from Library</Text>
-        </TouchableOpacity>
+        {errorKind === 'timeout' && (
+          <TouchableOpacity style={[S.secondaryBtn, { marginTop: 12 }]} onPress={() => router.navigate('/' as never)}>
+            <Text style={S.secondaryBtnTxt}>Score Manually</Text>
+          </TouchableOpacity>
+        )}
+        {__DEV__ && (
+          <TouchableOpacity style={[S.secondaryBtn, { marginTop: 12 }]} onPress={handlePickFromLibrary}>
+            <Text style={S.secondaryBtnTxt}>Pick from Library</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -205,13 +181,7 @@ export default function CameraScreen() {
   // ── Camera preview ─────────────────────────────────────────────────────────
 
   return (
-    <View
-      style={S.root}
-      onLayout={e => setViewDim({
-        width:  e.nativeEvent.layout.width,
-        height: e.nativeEvent.layout.height,
-      })}
-    >
+    <View style={S.root}>
       {isFocused && (
         <CameraView ref={cameraRef} style={S.camera} facing="back">
 
@@ -220,15 +190,21 @@ export default function CameraScreen() {
             <Text style={S.topBarTitle}>Camera Score</Text>
           </View>
 
-          {/* Guide overlay — always rendered (empty View until viewDim ready), child 2 of 3 */}
-          <GuideOverlay viewDim={viewDim} />
+          {/* Instruction — always rendered, child 2 of 3 */}
+          <View style={S.instructionWrap} pointerEvents="none">
+            <Text style={S.instructionText}>Arrange tiles face-up and take a photo</Text>
+          </View>
 
           {/* Bottom bar — always rendered, child 3 of 3 */}
           <View style={[S.bottomBar, { paddingBottom: insets.bottom + 24 }]}>
-            <TouchableOpacity style={S.libraryBtn} onPress={handlePickFromLibrary}>
-              <Text style={S.libraryBtnTxt}>Library</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={S.captureBtn} onPress={handleCapture} disabled={!viewDim}>
+            {__DEV__ ? (
+              <TouchableOpacity style={S.libraryBtn} onPress={handlePickFromLibrary}>
+                <Text style={S.libraryBtnTxt}>Library</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={S.libraryBtn} />
+            )}
+            <TouchableOpacity style={S.captureBtn} onPress={handleCapture}>
               <View style={S.captureBtnInner} />
             </TouchableOpacity>
             <View style={S.libraryBtn} />
@@ -253,22 +229,14 @@ const S = StyleSheet.create({
   },
   topBarTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
 
-  // Guide overlay
-  guide: {
-    position: 'absolute',
-    borderWidth: 2, borderRadius: 10,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.75)',
+  instructionWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 24,
   },
-  guideLabelWrap: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  guideLabel: {
+  instructionText: {
     color: 'rgba(255,255,255,0.85)',
-    fontSize: 12, fontWeight: '500', textAlign: 'center',
+    fontSize: 13, fontWeight: '500', textAlign: 'center',
     backgroundColor: 'rgba(0,0,0,0.35)',
-    paddingHorizontal: 10, paddingVertical: 4,
+    paddingHorizontal: 14, paddingVertical: 6,
     borderRadius: 10, overflow: 'hidden',
   },
 

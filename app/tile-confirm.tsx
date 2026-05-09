@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, ActivityIndicator,
@@ -8,10 +8,12 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { TILE_CLASS_MAP, BONUS_CODES, HONOR_CODES } from '@/constants/tileMap';
+import { TILE_CLASS_MAP, BONUS_CODES } from '@/constants/tileMap';
 import { DetectedTile, PendingDetection } from '@/types/tiles';
 import { CAMERA_PREFILL_KEY } from './(tabs)/camera';
 import { PENDING_DETECTION_KEY } from './(tabs)/camera';
+import { PATTERNS } from '@/utils/scoring';
+import { analyzeHand } from '@/utils/handAnalysis';
 import TilePicker from '@/components/TilePicker';
 
 type PickerContext =
@@ -35,6 +37,20 @@ export default function TileConfirmScreen() {
   const [bonusTiles, setBonusTiles] = useState<DetectedTile[]>([]);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
   const [pickerContext, setPickerContext] = useState<PickerContext>(null);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+  function dismissPattern(id: string) {
+    setDismissedIds(prev => new Set([...prev, id]));
+  }
+
+  // Analyze hand whenever tiles change
+  const suggested = useMemo(
+    () => analyzeHand(
+      handTiles.map(t => t.classCode),
+      bonusTiles.map(t => t.classCode),
+    ),
+    [handTiles, bonusTiles],
+  );
 
   useEffect(() => {
     AsyncStorage.getItem(PENDING_DETECTION_KEY).then(raw => {
@@ -78,22 +94,14 @@ export default function TileConfirmScreen() {
   }
 
   function handleScoreHand() {
-    const flowerCount = bonusTiles.length;
-    const noHonors    = !handTiles.some(t => HONOR_CODES.has(t.classCode));
-
-    const suitLetters = handTiles
-      .map(t => (t.classCode.length === 2 && 'BCD'.includes(t.classCode[1])) ? t.classCode[1] : null)
-      .filter((s): s is string => s !== null);
-    const uniqueSuits  = new Set(suitLetters);
-    const honorsInHand = handTiles.filter(t => HONOR_CODES.has(t.classCode)).length;
-
-    const patternIds: string[] = [];
-    if (uniqueSuits.size === 1 && honorsInHand === 0 && suitLetters.length === handTiles.length)
-      patternIds.push('qing_yi_se');
-    else if (uniqueSuits.size === 1 && honorsInHand > 0)
-      patternIds.push('cou_yi_se');
-
-    AsyncStorage.setItem(CAMERA_PREFILL_KEY, JSON.stringify({ flowerCount, noHonors, patternIds }));
+    const filtered = {
+      ...suggested,
+      patternIds:    suggested.patternIds.filter(id => !dismissedIds.has(id)),
+      patternCounts: Object.fromEntries(
+        Object.entries(suggested.patternCounts).filter(([id]) => !dismissedIds.has(id)),
+      ),
+    };
+    AsyncStorage.setItem(CAMERA_PREFILL_KEY, JSON.stringify(filtered));
     router.navigate('/' as never);
   }
 
@@ -108,6 +116,22 @@ export default function TileConfirmScreen() {
   const fit = containerSize
     ? getImageFit(photoWidth, photoHeight, containerSize.width, containerSize.height)
     : null;
+
+  // Flower/honors summary label and tai for the preview section
+  const { flowerCount, noHonors, patternIds, patternCounts } = suggested;
+  const flowerHonorLines: { label: string; tai: number }[] = [];
+  if (flowerCount === 0 && noHonors) {
+    flowerHonorLines.push({ label: 'No flowers & No honors 無花無字', tai: 3 });
+  } else {
+    if (flowerCount === 0) flowerHonorLines.push({ label: 'No flowers 無花', tai: 1 });
+    if (noHonors)          flowerHonorLines.push({ label: 'No honor tiles 無字', tai: 1 });
+    if (flowerCount > 0)   flowerHonorLines.push({ label: `${flowerCount} flower tile${flowerCount > 1 ? 's' : ''}`, tai: flowerCount });
+  }
+
+  const hasAnySuggestions =
+    flowerHonorLines.length > 0 ||
+    patternIds.some(id => !dismissedIds.has(id)) ||
+    Object.keys(patternCounts).some(id => !dismissedIds.has(id));
 
   return (
     <View style={[S.root, { paddingTop: insets.top }]}>
@@ -185,6 +209,70 @@ export default function TileConfirmScreen() {
           </View>
         </ScrollView>
 
+        {/* Detected Patterns preview */}
+        <View style={S.sectionHeader2}>
+          <Text style={S.sectionTitle}>Detected Patterns</Text>
+        </View>
+
+        {hasAnySuggestions ? (
+          <>
+            {flowerHonorLines.map((line, i) => (
+              <View key={i} style={S.detectedRow}>
+                <Text style={S.detectedName}>{line.label}</Text>
+                <Text style={S.detectedTai}>+{line.tai} tai</Text>
+              </View>
+            ))}
+
+            {patternIds
+              .filter(id => !dismissedIds.has(id))
+              .map(id => {
+                const p = PATTERNS.find(pat => pat.id === id);
+                if (!p) return null;
+                return (
+                  <View key={id} style={S.detectedRow}>
+                    <View style={S.detectedInfo}>
+                      <Text style={S.detectedName}>{p.english}</Text>
+                      <Text style={S.detectedChinese}>{p.chinese}  {p.pinyin}</Text>
+                    </View>
+                    <Text style={S.detectedTai}>+{p.tai} tai</Text>
+                    <TouchableOpacity
+                      style={S.detectedDismiss}
+                      onPress={() => dismissPattern(id)}
+                      hitSlop={8}
+                    >
+                      <Text style={S.detectedDismissTxt}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+
+            {Object.entries(patternCounts)
+              .filter(([id]) => !dismissedIds.has(id))
+              .map(([id, count]) => {
+                const p = PATTERNS.find(pat => pat.id === id);
+                if (!p) return null;
+                return (
+                  <View key={id} style={S.detectedRow}>
+                    <View style={S.detectedInfo}>
+                      <Text style={S.detectedName}>{count}× {p.english}</Text>
+                      <Text style={S.detectedChinese}>{p.chinese}  {p.pinyin}</Text>
+                    </View>
+                    <Text style={S.detectedTai}>+{p.tai * count} tai</Text>
+                    <TouchableOpacity
+                      style={S.detectedDismiss}
+                      onPress={() => dismissPattern(id)}
+                      hitSlop={8}
+                    >
+                      <Text style={S.detectedDismissTxt}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+          </>
+        ) : (
+          <Text style={S.emptyNote}>No special patterns detected</Text>
+        )}
+
         <Text style={S.confirmNote}>
           Tap any tile to change it, or tap ✕ to remove a false detection.
           Flowers and seasons go in Bonus tiles.
@@ -253,6 +341,9 @@ const S = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 8,
   },
+  sectionHeader2: {
+    marginTop: 20, marginBottom: 8,
+  },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: 0.6 },
   addBtn: {
     backgroundColor: '#8B0000', borderRadius: 8,
@@ -260,8 +351,26 @@ const S = StyleSheet.create({
   },
   addBtnTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
-  tileRow: { flexDirection: 'row', gap: 8, paddingBottom: 4 },
+  tileRow: { flexDirection: 'row', gap: 8, paddingBottom: 4, paddingTop: 10 },
   emptyNote: { color: '#bbb', fontSize: 13, fontStyle: 'italic', padding: 8 },
+
+  // Detected patterns preview
+  detectedRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#fff', borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 12,
+    marginBottom: 6, borderWidth: 1, borderColor: '#eee',
+  },
+  detectedInfo:    { flex: 1 },
+  detectedName:    { fontSize: 14, fontWeight: '600', color: '#222' },
+  detectedChinese: { fontSize: 11, color: '#888', marginTop: 2 },
+  detectedTai:     { fontSize: 14, fontWeight: '700', color: '#8B0000', marginLeft: 10 },
+  detectedDismiss: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#f0f0f0', alignItems: 'center', justifyContent: 'center',
+    marginLeft: 10,
+  },
+  detectedDismissTxt: { fontSize: 10, color: '#999', fontWeight: '700' },
 
   confirmNote: {
     color: '#aaa', fontSize: 12, fontStyle: 'italic',
@@ -280,7 +389,7 @@ const S = StyleSheet.create({
 });
 
 const TC = StyleSheet.create({
-  wrap: { width: 72, position: 'relative' },
+  wrap: { width: 72, position: 'relative', overflow: 'visible' },
   inner: {
     backgroundColor: '#fff', borderRadius: 10,
     padding: 8, alignItems: 'center', borderWidth: 1, borderColor: '#eee',
@@ -290,10 +399,10 @@ const TC = StyleSheet.create({
   name: { fontSize: 9, color: '#666', textAlign: 'center', marginTop: 3, lineHeight: 12 },
   conf: { fontSize: 9, fontWeight: '600', marginTop: 4 },
   remove: {
-    position: 'absolute', top: -6, right: -6,
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: '#888', alignItems: 'center', justifyContent: 'center',
-    zIndex: 10,
+    position: 'absolute', top: -8, right: -8,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#cc2222', alignItems: 'center', justifyContent: 'center',
+    zIndex: 10, borderWidth: 2, borderColor: '#fff',
   },
-  removeTxt: { color: '#fff', fontSize: 10, fontWeight: '700', lineHeight: 12 },
+  removeTxt: { color: '#fff', fontSize: 11, fontWeight: '800', lineHeight: 13 },
 });

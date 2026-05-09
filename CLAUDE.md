@@ -29,16 +29,28 @@ Taiwanese 16-tile mahjong scoring app for iOS. Built with Expo (SDK 54), React N
 - A winning hand laid out on the table shows **17 regular tiles** (16-tile hand + the winning tile) plus 0–8 bonus tiles (flowers/seasons) set aside separately
 - Flower/season tiles are bonus tiles (0-8), set aside from the 16-tile hand; tile-confirm shows "Hand: n/17 tiles" as a guide (not a hard gate)
 
-## Roboflow Integration
-- Using direct hosted inference at:
-  `POST https://serverless.roboflow.com/{ENDPOINT}/{VERSION}?api_key={KEY}`
-- Model: mahjong-baq4s/83 by Jon Chan on Roboflow Universe (42 classes, CC BY 4.0)
-- Tile classes: 1B-9B (bamboo), 1C-9C (characters), 1D-9D (dots), EW/SW/WW/NW (winds), RD/GD/WD (dragons), 1F-4F (flowers), 1S-4S (seasons)
+## Claude Vision Integration (primary)
+- `utils/claudeVisionService.ts` — `detectTilesWithVision(base64: string): Promise<DetectedTile[]>`
+- Calls `POST https://api.anthropic.com/v1/messages`, model `claude-opus-4-7`, max_tokens 1024
+- Sends base64 JPEG + structured prompt asking for JSON array of `{class, confidence, group, position}`
+- `group` field: "hand" (main row), "meld" (exposed peng/chow/kong), "bonus" (flower/season)
+- Prompt instructs Claude to ignore discard pool, wall tiles, and other players' tiles
+- Position strings map to bbox.x for sort order: left=100, center-left=300, center=500, center-right=700, right=900
+- Confidence strings map to numbers: high=0.95, medium=0.70, low=0.40
+- `isBonus` set when group==="bonus" OR classCode is in BONUS_CODES (belt-and-suspenders)
+- bbox.width=0 signals no physical bounding box (tile-confirm skips drawing it)
+- Activated when `EXPO_PUBLIC_ANTHROPIC_API_KEY` is set in `.env`
+
+## Roboflow Integration (fallback)
+- `services/roboflowService.ts` — `detectTiles(base64: string): Promise<DetectedTile[]>`
+- Direct hosted inference: `POST https://serverless.roboflow.com/{ENDPOINT}/{VERSION}?api_key={KEY}`
+- Model: mahjong-baq4s/83 — 42 classes, but only detects ~8-10/17 tiles on tile sets it wasn't trained on
 - Body: raw base64 JPEG string, `Content-Type: application/x-www-form-urlencoded`
 - Response: `{ predictions: [{ class, confidence, x, y, width, height }] }` (center-based coords)
-- Environment variables in `.env` (never commit) — must use `EXPO_PUBLIC_` prefix for Expo to embed them:
+- Environment variables in `.env` (never commit) — must use `EXPO_PUBLIC_` prefix:
   `EXPO_PUBLIC_ROBOFLOW_API_KEY`, `EXPO_PUBLIC_ROBOFLOW_MODEL_ENDPOINT`, `EXPO_PUBLIC_ROBOFLOW_MODEL_VERSION`
-- Flow: camera.tsx → resize to 1280px → base64 → detectTiles() → tile-confirm.tsx → CAMERA_PREFILL_KEY → Score Hand
+- Used when `EXPO_PUBLIC_ANTHROPIC_API_KEY` is absent (controlled by `USE_CLAUDE` const in camera.tsx)
+- Flow: camera.tsx → resize to 1920px → base64 → detect → tile-confirm.tsx → CAMERA_PREFILL_KEY → Score Hand
 
 ## Dependencies of Note
 - expo-camera (CameraView, not legacy Camera)
