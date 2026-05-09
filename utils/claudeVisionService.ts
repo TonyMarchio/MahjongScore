@@ -117,7 +117,11 @@ export async function detectTilesWithVision(imageBase64: string): Promise<Detect
   const rawText: string = data.content?.[0]?.text ?? '';
   console.log('[ClaudeVision] raw response:', rawText);
 
-  const jsonText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  // Extract the JSON array from wherever it appears in the response
+  const arrayMatch = rawText.match(/\[[\s\S]*\]/);
+  const jsonText   = arrayMatch
+    ? arrayMatch[0]
+    : rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
 
   let parsed: VisionTile[] = [];
   try {
